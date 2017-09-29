@@ -1,5 +1,7 @@
 package com.example.android.miwok;
 
+import android.content.Context;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -9,9 +11,27 @@ import android.widget.ListView;
 
 import java.util.ArrayList;
 
+import static android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT;
+import static android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK;
+
 public class PhrasesActivity extends AppCompatActivity {
 
     private MediaPlayer mMediaPlayer;
+    private AudioManager audioManager;
+
+    AudioManager.OnAudioFocusChangeListener afChangeListener = new AudioManager.OnAudioFocusChangeListener() {
+        public void onAudioFocusChange(int focusChange) {
+            if (focusChange == AUDIOFOCUS_LOSS_TRANSIENT || focusChange==AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK){
+                mMediaPlayer.pause();
+                mMediaPlayer.seekTo(0);
+                // Pause playback
+            } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+                mMediaPlayer.start();
+            } else if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+                releaseMediaPlayer();
+            }
+        }
+    };
     private MediaPlayer.OnCompletionListener completionListener = new MediaPlayer.OnCompletionListener(){
         @Override
         public void onCompletion(MediaPlayer mediaPlayer) {
@@ -21,10 +41,12 @@ public class PhrasesActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_numbers);
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
 
 
-                // Create a list of words
+
+        // Create a list of words
                 final ArrayList<Word> words = new ArrayList<Word>();
                 words.add(new Word("Hello", "O-la",R.raw.hello));
                 words.add(new Word("Good morning", "Bway-nos Dee-as",R.raw.goodmorning));
@@ -41,35 +63,47 @@ public class PhrasesActivity extends AppCompatActivity {
 
                 // Create an {@link WordAdapter}, whose data source is a list of {@link Word}s. The
                 // adapter knows how to create list items for each item in the list.
-                WordAdapter adapter = new WordAdapter(this, words);
 
-                // Find the {@link ListView} object in the view hierarchy of the {@link Activity}.
-                // There should be a {@link ListView} with the view ID called list, which is declared in the
-                // word_list.xml layout file.
-                ListView listView = (ListView) findViewById(R.id.list);
+        WordAdapter itemsAdapter = new WordAdapter(this, words);
 
-                // Make the {@link ListView} use the {@link WordAdapter} we created above, so that the
-                // {@link ListView} will display list items for each {@link Word} in the list.
-                listView.setAdapter(adapter);
+        ListView listView = (ListView) findViewById(R.id.list);
+
+        listView.setAdapter(itemsAdapter);
+
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> adapterView, View view, int position, long l) {
+                // Get the {@link Word} object at the given position the user clicked on
+                Word word = words.get(position);
+                releaseMediaPlayer();
+                // Request audio focus for playback
+                int result = audioManager.requestAudioFocus(afChangeListener,
+                        // Use the music stream.
+                        AudioManager.STREAM_MUSIC,
+                        // Request permanent focus.
+                        AudioManager.AUDIOFOCUS_GAIN);
+
+                if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+
+                    // Start playback.
 
 
-                listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-                    @Override
-                    public void onItemClick(AdapterView<?> adapterView, View view, int position, long l) {
-                        // Get the {@link Word} object at the given position the user clicked on
-                        Word word = words.get(position);
-                        releaseMediaPlayer();
+                    // Create and setup the {@link MediaPlayer} for the audio resource associated
+                    // with the current word
+                    mMediaPlayer = MediaPlayer.create(PhrasesActivity.this, word.getAudioResourceId());
 
-                        // Create and setup the {@link MediaPlayer} for the audio resource associated
-                        // with the current word
-                        mMediaPlayer = MediaPlayer.create(PhrasesActivity.this, word.getAudioResourceId());
-
-                        // Start the audio file
-                        mMediaPlayer.start();
-                        mMediaPlayer.setOnCompletionListener(completionListener);
-                    }
-                });
+                    // Start the audio file
+                    mMediaPlayer.start();
+                    mMediaPlayer.setOnCompletionListener(completionListener );
+                }
             }
+        });
+    }
+    @Override
+    protected void onStop() {
+        super.onStop();
+        releaseMediaPlayer();
+    }
     private void releaseMediaPlayer() {
         // If the media player is not null, then it may be currently playing a sound.
         if (mMediaPlayer != null) {
@@ -81,6 +115,11 @@ public class PhrasesActivity extends AppCompatActivity {
             // setting the media player to null is an easy way to tell that the media player
             // is not configured to play an audio file at the moment.
             mMediaPlayer = null;
+            audioManager.abandonAudioFocus(afChangeListener);
         }
     }
-        }
+
+
+
+}
+
